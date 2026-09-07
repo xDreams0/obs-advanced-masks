@@ -3,6 +3,8 @@ name: Build OBS 32 source rebind test
 on:
   push:
     branches: [fix/obs32-source-rebind]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 env:
