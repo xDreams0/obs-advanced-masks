@@ -28,4 +28,6 @@ struct advanced_masks_data {
 
 	bool invert;
 	bool multiPassShader;
+	uint32_t settings_target_width;
+	uint32_t settings_target_height;
 };

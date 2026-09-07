@@ -78,6 +78,8 @@ static void *advanced_masks_create(obs_data_t *settings, obs_source_t *source)
 
 	filter->color_adj_data = bzalloc(sizeof(color_adjustments_data_t));
 	filter->multiPassShader = true;
+	filter->settings_target_width = 0;
+	filter->settings_target_height = 0;
 
 	load_output_effect(filter);
 	obs_source_update(source, settings);
@@ -743,6 +745,23 @@ static void advanced_masks_video_tick(void *data, float seconds)
 	}
 	filter->base->width = (uint32_t)obs_source_get_base_width(target);
 	filter->base->height = (uint32_t)obs_source_get_base_height(target);
+
+	/* Source Clone deliberately reports 1x1 until its cloned source has been
+	 * resolved. OBS 32 can tick Advanced Masks during that temporary state.
+	 * Do not treat 1x1 as a usable target. Re-apply the stored filter settings
+	 * once real target dimensions become available, and again if the target
+	 * dimensions later change. This mirrors the manual property edit that
+	 * currently makes Shape masks start working. */
+	if (filter->base->width > 1 && filter->base->height > 1 &&
+	    (filter->settings_target_width != filter->base->width ||
+	     filter->settings_target_height != filter->base->height)) {
+		filter->settings_target_width = filter->base->width;
+		filter->settings_target_height = filter->base->height;
+		blog(LOG_INFO,
+		     "[Advanced Masks] Target dimensions ready/changed (%ux%u), refreshing settings",
+		     filter->base->width, filter->base->height);
+		obs_source_update(filter->base->context, NULL);
+	}
 
 	bool multiPass = advanced_masks_multi_pass(filter);
 	if (!multiPass) {
