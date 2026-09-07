@@ -1,87 +1,46 @@
-name: Build OBS 32 Shape/source-clone startup test
+name: Finalize OBS 32 startup fix
 
 on:
   push:
     branches: [fix/obs32-source-rebind]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
 
-env:
-  PLUGIN_NAME: obs-advanced-masks
-  OBS_VERSION: 28.0.0-rc1
+permissions:
+  contents: write
 
 jobs:
-  windows-x64:
-    name: Windows x64 portable
-    runs-on: windows-2022
-    env:
-      CMAKE_GENERATOR: "Visual Studio 17 2022"
-      WINDOWS_DEPS_VERSION: "2022-08-02"
+  finalize:
+    runs-on: ubuntu-latest
     steps:
-      - name: Add Visual Studio 2022 MSBuild to PATH
-        uses: microsoft/setup-msbuild@v2
-        with:
-          vs-version: '[17.0,18.0)'
-
-      - name: Checkout OBS
+      - name: Checkout branch
         uses: actions/checkout@v4
         with:
-          repository: obsproject/obs-studio
-          ref: ${{ env.OBS_VERSION }}
-          submodules: recursive
-
-      - name: Checkout patched plugin branch
-        uses: actions/checkout@v4
-        with:
-          repository: xDreams0/obs-advanced-masks
           ref: fix/obs32-source-rebind
-          path: plugins/${{ env.PLUGIN_NAME }}
+          fetch-depth: 0
 
-      - name: Apply OBS 32 startup fixes
-        shell: pwsh
+      - name: Apply validated Source Clone startup fix
+        run: python scripts/apply_obs32_startup_refresh.py .
+
+      - name: Remove experimental helpers
         run: |
-          python ".\plugins\${{ env.PLUGIN_NAME }}\scripts\apply_obs32_bsm_init.py" ".\plugins\${{ env.PLUGIN_NAME }}"
-          python ".\plugins\${{ env.PLUGIN_NAME }}\scripts\apply_obs32_bsm_rebind.py" ".\plugins\${{ env.PLUGIN_NAME }}\src\mask-bsm.c"
-          python ".\plugins\${{ env.PLUGIN_NAME }}\scripts\apply_obs32_startup_refresh.py" ".\plugins\${{ env.PLUGIN_NAME }}"
-          git -C ".\plugins\${{ env.PLUGIN_NAME }}" diff --check
-          git -C ".\plugins\${{ env.PLUGIN_NAME }}" diff -- src/mask-bsm.c src/mask-bsm.h src/advanced-masks-filter.c src/advanced-masks.h
+          rm -f scripts/apply_obs32_bsm_init.py
+          rm -f scripts/apply_obs32_bsm_rebind.py
+          rm -f scripts/apply_obs32_startup_refresh.py
+          rm -f .github/workflows/build-obs32-source-rebind.yml
+          rmdir scripts 2>/dev/null || true
 
-      - name: Add plugin to OBS CMake
-        shell: cmd
-        run: echo add_subdirectory(${{ env.PLUGIN_NAME }}) > plugins\CMakeLists.txt
-
-      - name: Install Qt prerequisite
-        shell: pwsh
+      - name: Verify cleanup
         run: |
-          curl.exe -kLO "https://github.com/obsproject/obs-deps/releases/download/${{ env.WINDOWS_DEPS_VERSION }}/windows-deps-qt6-${{ env.WINDOWS_DEPS_VERSION }}-x64.zip" -f --retry 5 -C -
-          7z x "windows-deps-qt6-${{ env.WINDOWS_DEPS_VERSION }}-x64.zip" -o"${{ github.workspace }}/cmbuild/deps"
+          git diff --check
+          test ! -e scripts/apply_obs32_bsm_init.py
+          test ! -e scripts/apply_obs32_bsm_rebind.py
+          test ! -e scripts/apply_obs32_startup_refresh.py
+          grep -q "settings_target_width" src/advanced-masks.h
+          grep -q "Target dimensions ready/changed" src/advanced-masks-filter.c
 
-      - name: Install OBS pre-built dependencies
-        shell: pwsh
+      - name: Commit clean source fix
         run: |
-          curl.exe -kLO "https://github.com/obsproject/obs-deps/releases/download/${{ env.WINDOWS_DEPS_VERSION }}/windows-deps-${{ env.WINDOWS_DEPS_VERSION }}-x64.zip" -f --retry 5 -C -
-          7z x "windows-deps-${{ env.WINDOWS_DEPS_VERSION }}-x64.zip" -o"${{ github.workspace }}/cmbuild/deps"
-
-      - name: Configure
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path .\package, .\build | Out-Null
-          cmake -S . -B "${{ github.workspace }}/build" -G"${{ env.CMAKE_GENERATOR }}" -DCMAKE_PREFIX_PATH:PATH="${{ github.workspace }}/cmbuild/deps" -Ax64 -DBUILD_BROWSER=false -DBUILD_VST=false -DBUILD_VIRTUALCAM=false -DBUILD_CAPTIONS=false -DCOMPILE_D3D12_HOOK=false -DENABLE_SCRIPTING=false -DDepsPath="${{ github.workspace }}/cmbuild/deps" -DDepsPath64="${{ github.workspace }}/cmbuild/deps" -DQTDIR="${{ github.workspace }}/cmbuild/deps/qt6" -DCOPIED_DEPENDENCIES=FALSE -DCOPY_DEPENDENCIES=TRUE -DENABLE_PLUGINS=TRUE -DDISABLE_PLUGINS=FALSE -DENABLE_BROWSER=FALSE -DENABLE_WEBSOCKET=FALSE
-
-      - name: Build
-        run: msbuild /m /p:Configuration=RelWithDebInfo .\build\obs-studio.sln
-
-      - name: Create portable OBS package
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path .\package\obs-plugins\64bit | Out-Null
-          New-Item -ItemType Directory -Force -Path .\package\data\obs-plugins\${{ env.PLUGIN_NAME }} | Out-Null
-          Copy-Item ".\build\rundir\RelWithDebInfo\obs-plugins\64bit\${{ env.PLUGIN_NAME }}.dll" ".\package\obs-plugins\64bit\${{ env.PLUGIN_NAME }}.dll"
-          Copy-Item ".\build\rundir\RelWithDebInfo\data\obs-plugins\${{ env.PLUGIN_NAME }}\*" ".\package\data\obs-plugins\${{ env.PLUGIN_NAME }}\" -Recurse
-
-      - name: Upload portable plugin
-        uses: actions/upload-artifact@v4
-        with:
-          name: obs-advanced-masks-obs32-source-clone-startup-v4-windows-x64
-          path: package/*
+          git config user.name "xDream_s"
+          git config user.email "37273978+xDreams0@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix startup masks on delayed-size targets"
+          git push origin HEAD:fix/obs32-source-rebind
