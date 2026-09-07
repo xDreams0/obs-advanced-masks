@@ -1,0 +1,137 @@
+diff --git a/src/mask-bsm.c b/src/mask-bsm.c
+--- a/src/mask-bsm.c
++++ b/src/mask-bsm.c
+@@ -50,6 +50,11 @@ void mask_bsm_update(mask_bsm_data_t *data, obs_data_t *settings)
+ 
+ 	dstr_copy(&data->mask_source_name, mask_source_name);
+ 
++	if (data->mask_source_source) {
++		obs_weak_source_release(data->mask_source_source);
++		data->mask_source_source = NULL;
++	}
++
+ 	obs_source_t *mask_source =
+ 		(mask_source_name && strlen(mask_source_name))
+ 			? obs_get_source_by_name(mask_source_name)
+@@ -57,7 +62,6 @@ void mask_bsm_update(mask_bsm_data_t *data, obs_data_t *settings)
+ 
+ 	if (mask_source) {
+-		obs_weak_source_release(data->mask_source_source);
+ 		data->mask_source_source =
+ 			obs_source_get_weak_source(mask_source);
+ 		obs_source_release(mask_source);
+@@ -180,30 +184,31 @@ static gs_texrender_t *get_mask_source_render(mask_bsm_data_t *data,
+ 					 base_filter_data_t *base)
+ {
+-	// Groups can take a few frames to register, so check to see if there is
+-	// a mask source selected by the user (mask_source_name) but no registered
+-	// mask source (mask_source_source).  If so, attempt to register the
+-	// mask_source_source.
+-	if (!data->mask_source_source &&
+-	    !dstr_is_empty(&data->mask_source_name)) {
+-		obs_source_t *mask_source =
+-			obs_get_source_by_name(data->mask_source_name.array);
+-		if (mask_source) {
++	gs_texrender_t *mask_source_render = NULL;
++	obs_source_t *source =
++		data->mask_source_source
++			? obs_weak_source_get_source(data->mask_source_source)
++			: NULL;
++
++	// OBS can recreate sources while loading a scene collection. A weak
++	// source handle may therefore remain allocated while no longer resolving
++	// to a live source. In that case, discard the stale handle and retry by
++	// the persisted source name until OBS has finished registering it.
++	if (!source && !dstr_is_empty(&data->mask_source_name)) {
++		if (data->mask_source_source) {
+ 			obs_weak_source_release(data->mask_source_source);
+-			data->mask_source_source =
+-				obs_source_get_weak_source(mask_source);
+-			obs_source_release(mask_source);
+-		} else {
+ 			data->mask_source_source = NULL;
+ 		}
++
++		source = obs_get_source_by_name(data->mask_source_name.array);
++		if (source) {
++			data->mask_source_source = obs_source_get_weak_source(source);
++		}
+ 	}
+ 
+-	gs_texrender_t *mask_source_render = NULL;
+-	obs_source_t *source =
+-		data->mask_source_source
+-			? obs_weak_source_get_source(data->mask_source_source)
+-			: NULL;
+-
+ 	if (!source) {
+ 		gs_texrender_t *tmp = base->output_texrender;
+ 		base->output_texrender = base->input_texrender;
+diff --git a/src/mask-source.c b/src/mask-source.c
+--- a/src/mask-source.c
++++ b/src/mask-source.c
+@@ -66,6 +66,11 @@ void mask_source_update(mask_source_data_t *data,
+ 		obs_data_get_string(settings, "mask_source");
+ 	dstr_copy(&data->mask_source_name, mask_source_name);
++
++	if (data->mask_source_source) {
++		obs_weak_source_release(data->mask_source_source);
++		data->mask_source_source = NULL;
++	}
++
+ 	obs_source_t *mask_source =
+ 		(mask_source_name && strlen(mask_source_name))
+ 			? obs_get_source_by_name(mask_source_name)
+@@ -73,7 +78,6 @@ void mask_source_update(mask_source_data_t *data,
+ 
+ 	if (mask_source) {
+-		obs_weak_source_release(data->mask_source_source);
+ 		data->mask_source_source =
+ 			obs_source_get_weak_source(mask_source);
+ 		obs_source_release(mask_source);
+@@ -679,33 +683,35 @@ gs_texrender_t* get_mask_source_texrender(mask_source_data_t* data, base_filter_data_t* base)
+ {
+ 	gs_texrender_t* mask_source_render = NULL;
+ 
+-	// Groups can take a few frames to register, so check to see if there is
+-	// a mask source selected by the user (mask_source_name) but no registered
+-	// mask source (mask_source_source).  If so, attempt to register the
+-	// mask_source_source.
+ 	bool has_mask = !dstr_is_empty(&data->mask_source_name) && dstr_cmp(&data->mask_source_name, obs_module_text("AdvancedMasks.Common.None")) != 0;
+-	if (!data->mask_source_source && has_mask)
+-	{
+-		obs_source_t* mask_source = obs_get_source_by_name(data->mask_source_name.array);
+-		if (mask_source) {
++	obs_source_t* source =
++		data->mask_source_source
++		? obs_weak_source_get_source(data->mask_source_source)
++		: NULL;
++
++	// A weak handle can outlive the concrete OBS source during scene
++	// collection startup. If it no longer resolves, release it and retry the
++	// saved source name on subsequent frames until the source is available.
++	if (!source && has_mask) {
++		if (data->mask_source_source) {
+ 			obs_weak_source_release(data->mask_source_source);
+-			data->mask_source_source =
+-				obs_source_get_weak_source(mask_source);
+-			obs_source_release(mask_source);
+-		}
+-		else {
+ 			data->mask_source_source = NULL;
+ 		}
++
++		source = obs_get_source_by_name(data->mask_source_name.array);
++		if (source) {
++			data->mask_source_source = obs_source_get_weak_source(source);
++		}
+ 	}
+ 
+-	obs_source_t* source =
+-		data->mask_source_source
+-		? obs_weak_source_get_source(data->mask_source_source)
+-		: NULL;
+ 	if (!source) {
+-		obs_source_release(source);
+ 		return NULL;
+ 	}
