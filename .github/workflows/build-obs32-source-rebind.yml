@@ -1,4 +1,4 @@
-name: Build OBS 32 source rebind test
+name: Build OBS 32 BSM startup test
 
 on:
   push:
@@ -38,12 +38,13 @@ jobs:
           ref: fix/obs32-source-rebind
           path: plugins/${{ env.PLUGIN_NAME }}
 
-      - name: Apply OBS startup BSM source rebind fix
+      - name: Apply OBS 32 BSM startup fixes
         shell: pwsh
         run: |
+          python ".\plugins\${{ env.PLUGIN_NAME }}\scripts\apply_obs32_bsm_init.py" ".\plugins\${{ env.PLUGIN_NAME }}"
           python ".\plugins\${{ env.PLUGIN_NAME }}\scripts\apply_obs32_bsm_rebind.py" ".\plugins\${{ env.PLUGIN_NAME }}\src\mask-bsm.c"
           git -C ".\plugins\${{ env.PLUGIN_NAME }}" diff --check
-          git -C ".\plugins\${{ env.PLUGIN_NAME }}" diff -- src/mask-bsm.c
+          git -C ".\plugins\${{ env.PLUGIN_NAME }}" diff -- src/mask-bsm.c src/mask-bsm.h src/advanced-masks-filter.c
 
       - name: Add plugin to OBS CMake
         shell: cmd
@@ -81,5 +82,5 @@ jobs:
       - name: Upload portable plugin
         uses: actions/upload-artifact@v4
         with:
-          name: obs-advanced-masks-obs32-bsm-rebind-windows-x64
+          name: obs-advanced-masks-obs32-bsm-init-v2-windows-x64
           path: package/*
