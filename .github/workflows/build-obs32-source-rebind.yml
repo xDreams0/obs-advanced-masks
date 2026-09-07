@@ -1,4 +1,4 @@
-name: Build OBS 32 Shape startup test
+name: Build OBS 32 Shape/source-clone startup test
 
 on:
   push:
@@ -83,5 +83,5 @@ jobs:
       - name: Upload portable plugin
         uses: actions/upload-artifact@v4
         with:
-          name: obs-advanced-masks-obs32-shape-startup-v3-windows-x64
+          name: obs-advanced-masks-obs32-source-clone-startup-v4-windows-x64
           path: package/*
